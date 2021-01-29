@@ -126,6 +126,7 @@ async def schedule(
     await driver.driver.set_viewport_size({"height": 10000, "width": 1920})
     await driver.click("/html/body/div[2]/div/div[3]/button[2]")
     await driver.driver.set_viewport_size({"height": 1280, "width": 1920})
+
     await driver.click('//*[@id="skin-app"]/div/section/div[2]/div[2]/button')
     await driver.wait_and_select(
         '//*[@id="skin-app"]/section/div/div[2]/div[1]/div[1]/div/div/button'
@@ -134,6 +135,7 @@ async def schedule(
 
 async def login(page: Page, name: str, password: str):
     await page.goto("https://ftty.ydmap.cn/user/login")
+    await page.add_init_script(_INIT_SCRIPT)
     driver = Driver(page)
     elem = await driver.wait_and_select(
         '//*[@id="skin-app"]/div/section/form/div[1]/div/div[1]/input'
@@ -155,6 +157,14 @@ async def login(page: Page, name: str, password: str):
     )
 
 
+_INIT_SCRIPT = """
+    Object.defineProperty(navigator, 'webdriver', {
+        value: undefined,
+        configurable: true
+    })
+"""
+
+
 async def new_browser(debug: bool, browser_type: BrowserType):
     browser = await browser_type.launch(
         executable_path="/usr/bin/google-chrome",
@@ -165,28 +175,14 @@ async def new_browser(debug: bool, browser_type: BrowserType):
         headless=not debug,
     )
     ctx = await browser.new_context(no_viewport=True)
-    await ctx.add_init_script(
-        """
-        Object.defineProperty(navigator, 'webdriver', {
-            value: undefined,
-            configurable: true
-        })
-    """
-    )
+    await ctx.add_init_script(_INIT_SCRIPT)
     return ctx.browser
 
 
 async def new_driver(browser: Browser):
     page = await browser.new_page()
     await page.set_viewport_size({"width": 1920, "height": 1280})
-    await page.add_init_script(
-        """
-        Object.defineProperty(navigator, 'webdriver', {
-            value: undefined,
-            configurable: true
-        })
-    """
-    )
+    await page.add_init_script(_INIT_SCRIPT)
     return page
 
 
