@@ -1,10 +1,25 @@
+import logging
 import asyncio
 from datetime import date, datetime, timedelta
-from typing import Callable, Iterable, TypeVar, Union
+from typing import Callable, Iterable, List, TypeVar, Union
 
 from playwright.async_api import Browser, ElementHandle, Page, BrowserType
+from tornado.gen import convert_yielded, multi_future
 
 _T = TypeVar("_T")
+logger = logging.getLogger()
+
+
+class SchedualError(Exception):
+    ...
+
+
+class ExpiredError(Exception):
+    ...
+
+
+class ReservedError(Exception):
+    ...
 
 
 class Driver:
@@ -73,11 +88,21 @@ class Court:
         return [TimeSection(elem, self.date) for elem in elems]
 
     async def schedual(self, start: datetime, end: datetime):
+        failures: List["TimeSection"] = []
         for ts in await self._get_time_sections():
             ts_start, ts_end = await ts.range()
             if start <= ts_start and ts_end <= end:
-                print("schedual", ts_start, "-", ts_end)
-                await ts.schedual()
+                logger.info(f"schedual {ts_start}-{ts_end}")
+                try:
+                    await ts.schedual()
+                except ExpiredError:
+                    logger.error(
+                        "can't schedual expired time section "
+                        f"{ts_start}-{ts_end} for court {self.name}"
+                    )
+                except ReservedError:
+                    failures.append(ts)
+        return failures
 
     def __str__(self) -> str:
         return self.name
@@ -102,11 +127,35 @@ class TimeSection:
         if "selected" in klass:
             return
 
+        if "expired" in klass:
+            raise ExpiredError()
+
+        if "col-completed" in klass or "col-inprocess" in klass:
+            raise ReservedError()
+
         await self.elem.click()
 
 
 def date_to_datetime(d: date):
     return datetime.combine(d, datetime.min.time())
+
+
+async def _schedule_ts(ts: TimeSection):
+    try:
+        await ts.schedual()
+        return
+    except ExpiredError:
+        return
+    except ReservedError:
+        return ts
+
+
+async def schedule_time_sections(tss: List["TimeSection"]):
+    failures = [ts for ts in tss]
+    while len(failures) == 0:
+        failures = await multi_future([convert_yielded(_schedule_ts(ts)) for ts in failures])
+        failures = list(filter(bool, failures))
+        await asyncio.sleep(1)
 
 
 async def schedule(

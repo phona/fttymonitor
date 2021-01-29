@@ -47,13 +47,14 @@ def main():
             try:
                 await login(driver, args.username, args.password)
                 court_num_or_name = args.court_name or args.court_num
-                await schedule(
+                tss = await schedule(
                     driver,
                     court_num_or_name,
                     args.date,
                     args.start_time,
                     args.end_time,
                 )
+
             finally:
                 await driver.screenshot(path="test.png", type="png")
                 await driver.close()

@@ -2,9 +2,13 @@ from .models import Task
 
 from tornado.httputil import HTTPServerRequest
 from tornado.web import RequestHandler
+from tornado.queues import Queue
 
 
 class TaskHandler(RequestHandler):
+    def __init__(self, queue: Queue):
+        self.queue = queue
+
     def get(self):
         ...
 
