@@ -47,7 +47,7 @@ def main():
             try:
                 await login(driver, args.username, args.password)
                 court_num_or_name = args.court_name or args.court_num
-                tss = await schedule(
+                await schedule(
                     driver,
                     court_num_or_name,
                     args.date,

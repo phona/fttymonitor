@@ -1,10 +1,13 @@
 import logging
 import asyncio
+from asyncio.queues import Queue
 from datetime import date, datetime, timedelta
 from typing import Callable, Iterable, List, TypeVar, Union
 
 from playwright.async_api import Browser, ElementHandle, Page, BrowserType
 from tornado.gen import convert_yielded, multi_future
+
+from .models import Court as CourtModel
 
 _T = TypeVar("_T")
 logger = logging.getLogger()
@@ -153,7 +156,9 @@ async def _schedule_ts(ts: TimeSection):
 async def schedule_time_sections(tss: List["TimeSection"]):
     failures = [ts for ts in tss]
     while len(failures) == 0:
-        failures = await multi_future([convert_yielded(_schedule_ts(ts)) for ts in failures])
+        failures = await multi_future(
+            [convert_yielded(_schedule_ts(ts)) for ts in failures]
+        )
         failures = list(filter(bool, failures))
         await asyncio.sleep(1)
 
@@ -180,6 +185,50 @@ async def schedule(
     await driver.wait_and_select(
         '//*[@id="skin-app"]/section/div/div[2]/div[1]/div[1]/div/div/button'
     )
+
+
+class Scheduler:
+    def __init__(self, page: Page, username: str, password: str):
+        self.username = username
+        self.password = password
+        self.driver = Driver(page)
+        self.queue: "Queue['CourtModel']" = Queue()
+        self.is_stopped = False
+
+    async def _move_to_entry(self):
+        await self.driver.driver.goto("https://ftty.ydmap.cn/venue/101333")
+        await self.driver.click('//*[@id="skin-app"]/section/div[5]/div/div/a/button')
+        await login(self.driver.driver, self.username, self.password)
+
+    async def register(self, court: CourtModel):
+        await self.queue.put(court)
+
+    async def start(self):
+        self.is_stopped = False
+        while not self.is_stopped:
+            court_ = await self.queue.get()
+            d = await select_date(self.driver, court_.date)
+            num_or_name = court_.name or court_.num
+            assert num_or_name is not None
+            court = await d.get_court(num_or_name)
+            await court.schedual(
+                date_to_datetime(court_.date) + court_.start_time,
+                date_to_datetime(court_.date) + court_.end_time,
+            )
+            await self.driver.click('//*[@id="skin-app"]/section/div[4]/div[2]/button')
+            await self.driver.driver.set_viewport_size({"height": 10000, "width": 1920})
+            await self.driver.click("/html/body/div[2]/div/div[3]/button[2]")
+            await self.driver.driver.set_viewport_size({"height": 1280, "width": 1920})
+
+            await self.driver.click(
+                '//*[@id="skin-app"]/div/section/div[2]/div[2]/button'
+            )
+            await self.driver.wait_and_select(
+                '//*[@id="skin-app"]/section/div/div[2]/div[1]/div[1]/div/div/button'
+            )
+
+    async def stop(self):
+        self.is_stopped = True
 
 
 async def login(page: Page, name: str, password: str):
